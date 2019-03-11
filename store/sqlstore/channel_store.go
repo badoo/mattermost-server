@@ -2519,3 +2519,32 @@ func (s SqlChannelStore) GetChannelMembersForExport(userId string, teamId string
 		result.Data = members
 	})
 }
+
+func (s SqlChannelStore) GetChannelsBatchForIndexing(startTime, endTime int64, limit int) store.StoreChannel {
+	return store.Do(func(result *store.StoreResult) {
+		var channels []*model.Channel
+		_, err1 := s.GetSearchReplica().Select(&channels,
+			`SELECT
+                 *
+             FROM
+                 Channels
+             WHERE
+                 Type = "O"
+             AND
+                 CreateAt >= :StartTime
+             AND
+                 CreateAt < :EndTime
+             ORDER BY
+                 CreateAt
+             LIMIT
+                 :NumChannels`,
+			map[string]interface{}{"StartTime": startTime, "EndTime": endTime, "NumChannels": limit})
+
+		if err1 != nil {
+			result.Err = model.NewAppError("SqlChannelStore.GetChannelsBatchForIndexing", "store.sql_channel.get_channels_batch_for_indexing.get.app_error", nil, err1.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		result.Data = channels
+	})
+}
