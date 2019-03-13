@@ -2529,7 +2529,7 @@ func (s SqlChannelStore) GetChannelsBatchForIndexing(startTime, endTime int64, l
              FROM
                  Channels
              WHERE
-                 Type = "O"
+                 Type = 'O'
              AND
                  CreateAt >= :StartTime
              AND

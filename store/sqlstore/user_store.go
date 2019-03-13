@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	sq "github.com/Masterminds/squirrel"
@@ -36,6 +37,7 @@ type SqlUserStore struct {
 	SqlStore
 	metrics einterfaces.MetricsInterface
 
+	queryBuilder sq.StatementBuilderType
 	// usersQuery is a starting point for all queries that return one or more Users.
 	usersQuery sq.SelectBuilder
 }
@@ -67,13 +69,14 @@ func NewSqlUserStore(sqlStore SqlStore, metrics einterfaces.MetricsInterface) st
 		metrics:  metrics,
 	}
 
-	us.usersQuery = sq.
+	us.queryBuilder = sq.StatementBuilder
+	if us.DriverName() == model.DATABASE_DRIVER_POSTGRES {
+		us.queryBuilder = us.queryBuilder.PlaceholderFormat(sq.Dollar)
+	}
+
+	us.usersQuery = us.queryBuilder.
 		Select("u.*").
 		From("Users u")
-
-	if us.DriverName() == model.DATABASE_DRIVER_POSTGRES {
-		us.usersQuery = us.usersQuery.PlaceholderFormat(sq.Dollar)
-	}
 
 	for _, db := range sqlStore.GetAllConns() {
 		table := db.AddTableWithName(model.User{}, "Users").SetKeys(false, "Id")
@@ -1441,8 +1444,7 @@ func (us SqlUserStore) InferSystemInstallDate() store.StoreChannel {
 func (us SqlUserStore) GetUsersBatchForIndexing(startTime, endTime int64, limit int) store.StoreChannel {
 	return store.Do(func(result *store.StoreResult) {
 		var users []*model.User
-		usersQuery, args, _ := sq.Select("*").
-			From("Users").
+		usersQuery, args, _ := us.usersQuery.
 			Where(sq.GtOrEq{"CreateAt": startTime}).
 			Where(sq.Lt{"CreateAt": endTime}).
 			OrderBy("CreateAt").
@@ -1461,7 +1463,8 @@ func (us SqlUserStore) GetUsersBatchForIndexing(startTime, endTime int64, limit 
 		}
 
 		var channelMembers []*model.ChannelMember
-		channelMembersQuery, args, _ := sq.Select("cm.*").
+		channelMembersQuery, args, _ := us.queryBuilder.
+			Select("cm.*").
 			From("ChannelMembers cm").
 			Join("Channels c ON cm.ChannelId = c.Id").
 			Where(sq.Eq{"c.Type": "O", "cm.UserId": userIds}).
@@ -1474,7 +1477,8 @@ func (us SqlUserStore) GetUsersBatchForIndexing(startTime, endTime int64, limit 
 		}
 
 		var teamMembers []*model.TeamMember
-		teamMembersQuery, args, _ := sq.Select("*").
+		teamMembersQuery, args, _ := us.queryBuilder.
+			Select("*").
 			From("TeamMembers").
 			Where(sq.Eq{"UserId": userIds, "DeleteAt": 0}).
 			ToSql()
@@ -1515,6 +1519,9 @@ func (us SqlUserStore) GetUsersBatchForIndexing(startTime, endTime int64, limit 
 		for _, user := range userMap {
 			usersForIndexing = append(usersForIndexing, user)
 		}
+		sort.Slice(usersForIndexing, func(i, j int) bool {
+			return usersForIndexing[i].CreateAt < usersForIndexing[j].CreateAt
+		})
 
 		result.Data = usersForIndexing
 	})
