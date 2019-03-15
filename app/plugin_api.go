@@ -195,7 +195,7 @@ func (api *PluginAPI) DeleteUser(userId string) *model.AppError {
 	return err
 }
 
-func (api *PluginAPI) GetUsers(options *model.UserGetOptions) ([]*model.User, *model.AppError) {
+func (api *PluginAPI) GetUsers(options model.UserGetOptions) ([]*model.User, *model.AppError) {
 	return api.app.GetUsers(options)
 }
 
